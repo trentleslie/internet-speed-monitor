@@ -1,0 +1,11 @@
+timestamp,isp,interface,target,latency_ms,success
+2026-04-09T07:02:22.816667,default,default,8.8.8.8,25.9,True
+2026-04-09T07:02:22.816667,default,default,1.1.1.1,30.5,True
+2026-04-09T07:03:22.968396,default,default,8.8.8.8,18.5,True
+2026-04-09T07:03:22.968396,default,default,1.1.1.1,16.0,True
+2026-04-09T07:04:23.133448,default,default,8.8.8.8,15.8,True
+2026-04-09T07:04:23.133448,default,default,1.1.1.1,17.7,True
+2026-04-09T07:05:23.336512,default,default,8.8.8.8,18.8,True
+2026-04-09T07:05:23.336512,default,default,1.1.1.1,17.4,True
+2026-04-09T07:06:23.506426,default,default,8.8.8.8,18.5,True
+2026-04-09T07:06:23.506426,default,default,1.1.1.1,16.8,True
