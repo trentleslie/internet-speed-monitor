@@ -1,0 +1,12 @@
+[Unit]
+Description=Deco per-client throughput poller (internet-speed-monitor)
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/internet-speed-monitor
+ExecStart=/home/pi/deco-tools/.venv/bin/python /home/pi/internet-speed-monitor/deco_poll.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

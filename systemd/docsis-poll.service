@@ -1,0 +1,12 @@
+[Unit]
+Description=Hitron DOCSIS line-health poller (internet-speed-monitor)
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/internet-speed-monitor
+ExecStart=/home/pi/deco-tools/.venv/bin/python /home/pi/internet-speed-monitor/docsis_poll.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
