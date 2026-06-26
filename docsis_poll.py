@@ -9,14 +9,14 @@ Counters (correcteds/uncorrect) are cumulative since the last modem reboot; the
 analysis step computes deltas (and treats a negative delta as a reboot reset).
 """
 import argparse
-import csv
 import os
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 import hitron_client
+
+from monitor_utils import append_rows, load_env, now_iso
 
 HOST = "192.168.100.1"
 ENV_PATH = Path(os.path.expanduser("~/.config/deco/.env"))
@@ -32,33 +32,6 @@ DS_HEADER = ["timestamp", "channel_id", "freq_hz", "modulation",
 US_HEADER = ["timestamp", "channel_id", "freq_hz", "modulation", "power_dbmv", "symbolrate"]
 STATUS_HEADER = ["timestamp", "poll_ok", "min_snr", "max_ds_power", "total_correcteds",
                  "total_uncorrect", "ds_channels", "us_channels", "max_us_power", "error"]
-
-
-def load_env(path=None):
-    if path is None:
-        path = ENV_PATH
-    env = {}
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            env[key.strip()] = value.strip()
-    return env
-
-
-def append_rows(path, header, rows):
-    if not rows:
-        return
-    is_new = not path.exists()
-    with open(path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=header)
-        if is_new:
-            writer.writeheader()
-        writer.writerows(rows)
-        f.flush()
-        os.fsync(f.fileno())
 
 
 def ds_rows(ds, ts):
@@ -103,12 +76,8 @@ def write_poll(client, ts):
     return ds, us
 
 
-def now_iso():
-    return datetime.now().isoformat()
-
-
 def make_client():
-    env = load_env()
+    env = load_env(ENV_PATH)
     return hitron_client.HitronClient(HOST, env.get("ASTOUND_USERNAME"), env.get("ASTOUND_PW"))
 
 
@@ -158,9 +127,12 @@ def main(argv=None):
     parser.add_argument("--once", action="store_true", help="poll once, print summary, exit")
     args = parser.parse_args(argv)
     try:
-        load_env()
+        env = load_env(ENV_PATH)
     except FileNotFoundError:
         print(f"ERROR: env file not found at {ENV_PATH}", file=sys.stderr)
+        return 2
+    if not env.get("ASTOUND_USERNAME") or not env.get("ASTOUND_PW"):
+        print("ERROR: ASTOUND_USERNAME/ASTOUND_PW missing or empty in env", file=sys.stderr)
         return 2
     if args.once:
         try:

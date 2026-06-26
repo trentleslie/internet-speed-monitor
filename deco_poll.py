@@ -12,14 +12,14 @@ Modes:
 Credentials are read from ~/.config/deco/.env (DECO_PW); never passed on argv.
 """
 import argparse
-import csv
 import os
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 from tplinkrouterc6u import TPLinkDecoClient
+
+from monitor_utils import append_rows, load_env, now_iso
 
 HOST = "192.168.68.1"
 USERNAME = "admin"  # local Deco auth uses "admin" + the app password, not the email
@@ -33,27 +33,6 @@ ERROR_BACKOFF = 5   # seconds to wait before reauth after a failed poll
 CLIENTS_HEADER = ["timestamp", "mac", "hostname", "ip", "conn_type", "down_speed", "up_speed"]
 STATUS_HEADER = ["timestamp", "poll_ok", "cpu_usage", "mem_usage",
                  "clients_total", "active_clients", "error"]
-
-
-def load_env(path=None):
-    """Parse a simple KEY=value .env file into a dict."""
-    if path is None:
-        path = ENV_PATH
-    env = {}
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            env[key.strip()] = value.strip()
-    return env
-
-
-def now_iso():
-    # Naive local time, matching the existing connectivity/speedtest collectors so
-    # timestamps line up directly for correlation.
-    return datetime.now().isoformat()
 
 
 def extract_rows(status, ts):
@@ -97,24 +76,6 @@ def failure_row(ts, err):
         "timestamp": ts, "poll_ok": False, "cpu_usage": "", "mem_usage": "",
         "clients_total": "", "active_clients": "", "error": str(err)[:200],
     }
-
-
-def append_rows(path, header, rows):
-    """Append rows to a CSV, writing the header only when creating the file.
-
-    Flushes and fsyncs after each write so an abrupt kill never leaves a
-    truncated/partial row (the failure mode that corrupted the old connectivity log).
-    """
-    if not rows:
-        return
-    is_new = not path.exists()
-    with open(path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=header)
-        if is_new:
-            writer.writeheader()
-        writer.writerows(rows)
-        f.flush()
-        os.fsync(f.fileno())
 
 
 def write_poll(status, ts):
@@ -198,7 +159,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        env = load_env()
+        env = load_env(ENV_PATH)
     except FileNotFoundError:
         print(f"ERROR: env file not found at {ENV_PATH}", file=sys.stderr)
         return 2

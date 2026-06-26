@@ -101,3 +101,19 @@ def test_do_iteration_survives_reauth_failure(tmp_path, monkeypatch):
 
     result = dp.do_iteration(client, "2026-06-25T10:00:00", bad_reauth)
     assert result is client  # keeps going with old client; loop must not die
+
+
+def test_main_missing_credentials_exits_2(tmp_path, monkeypatch, capsys):
+    env_file = tmp_path / ".env"
+    env_file.write_text("DECO_PW=x\n")  # env exists but no ASTOUND_* creds
+    monkeypatch.setattr(dp, "ENV_PATH", env_file)
+    rc = dp.main(["--once"])
+    assert rc == 2
+    assert "ASTOUND" in capsys.readouterr().err
+
+
+def test_main_missing_env_file_exits_2(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(dp, "ENV_PATH", tmp_path / "nope.env")
+    rc = dp.main([])
+    assert rc == 2
+    assert "not found" in capsys.readouterr().err
