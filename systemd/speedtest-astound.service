@@ -1,0 +1,8 @@
+[Unit]
+Description=Speed test via Astound (eth0)
+
+[Service]
+Type=oneshot
+Environment="PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin"
+WorkingDirectory=/home/pi/internet-speed-monitor
+ExecStart=/home/pi/deco-tools/.venv/bin/python /home/pi/internet-speed-monitor/speedtest_gated.py
