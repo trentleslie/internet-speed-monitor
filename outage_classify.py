@@ -32,7 +32,7 @@ outage-classify systemd timer does.
 import argparse
 import csv
 import io
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -110,26 +110,42 @@ def find_outages(conn_rows):
              "duration_s": int((e[-1] - e[0]).total_seconds())} for e in events]
 
 
-def docsis_baselines(docsis_rows):
-    """Fully-locked channel counts inferred from healthy polls."""
-    ds = [int(r["ds_channels"]) for r in docsis_rows
-          if (r.get("poll_ok") or "").strip() == "True" and (r.get("ds_channels") or "").isdigit()]
-    us = [int(r["us_channels"]) for r in docsis_rows
-          if (r.get("poll_ok") or "").strip() == "True" and (r.get("us_channels") or "").isdigit()]
-    return (max(ds) if ds else 0), (max(us) if us else 0)
-
-
 def ok(poll):
     return (poll.get("poll_ok") or "").strip() == "True"
 
 
+def chan_count(poll, key):
+    try:
+        return int(poll[key])
+    except (ValueError, KeyError, TypeError):
+        return 0
+
+
+def typical_lock(docsis_rows):
+    """Modal locked-channel counts among healthy polls, for the summary line. The
+    mode (not the max) so a one-off bonding spike doesn't masquerade as normal."""
+    ds = Counter(chan_count(r, "ds_channels") for r in docsis_rows if ok(r))
+    us = Counter(chan_count(r, "us_channels") for r in docsis_rows if ok(r))
+    ds.pop(0, None)
+    us.pop(0, None)
+    return (ds.most_common(1)[0][0] if ds else 0), (us.most_common(1)[0][0] if us else 0)
+
+
+def healthy_neighbors(docsis_rows, start, end):
+    """The last healthy poll before an outage and the first healthy one after it."""
+    before = [r for r in docsis_rows if ok(r) and (dt := parse_ts(r["timestamp"])) and dt < start]
+    after = [r for r in docsis_rows if ok(r) and (dt := parse_ts(r["timestamp"])) and dt > end]
+    b = max(before, key=lambda r: r["timestamp"]) if before else None
+    a = min(after, key=lambda r: r["timestamp"]) if after else None
+    return b, a
+
+
 def lock_lost(poll, ds_base, us_base):
     """RF lock loss visible in a *reachable* poll: fewer channels or collapsed SNR."""
-    try:
-        if int(poll["ds_channels"]) < ds_base or int(poll["us_channels"]) < us_base:
-            return True
-    except (ValueError, KeyError, TypeError):
-        pass
+    if ds_base and chan_count(poll, "ds_channels") < ds_base:
+        return True
+    if us_base and chan_count(poll, "us_channels") < us_base:
+        return True
     snr = poll.get("min_snr")
     if snr:
         try:
@@ -146,44 +162,48 @@ def total_correcteds(poll):
         return None
 
 
-def rebooted(docsis_rows, start, end):
-    """A reboot resets the cumulative error counters; detect it by comparing the
-    last healthy poll before the outage with the first healthy poll after it."""
-    before = [r for r in docsis_rows if ok(r) and (dt := parse_ts(r["timestamp"])) and dt < start]
-    after = [r for r in docsis_rows if ok(r) and (dt := parse_ts(r["timestamp"])) and dt > end]
+def rebooted(before, after):
+    """A reboot resets the cumulative error counters: detect it as a drop in
+    total_correcteds between the healthy polls bracketing the outage."""
     if not before or not after:
         return False
-    c_before = total_correcteds(max(before, key=lambda r: r["timestamp"]))
-    c_after = total_correcteds(min(after, key=lambda r: r["timestamp"]))
+    c_before, c_after = total_correcteds(before), total_correcteds(after)
     return c_before is not None and c_after is not None and c_after < c_before
 
 
-def classify(event, docsis_rows, ds_base, us_base):
+def classify(event, docsis_rows):
     lo = event["start"] - timedelta(seconds=DOCSIS_MARGIN_S)
     hi = event["end"] + timedelta(seconds=DOCSIS_MARGIN_S)
     window = [r for r in docsis_rows
               if (dt := parse_ts(r.get("timestamp"))) is not None and lo <= dt <= hi]
-    total = len(window)
-    if total == 0:
+    if not window:
         return "NO_DOCSIS", 0, 0
 
-    # Hard RF evidence of a genuine local fault.
-    hard = rebooted(docsis_rows, event["start"], event["end"]) or \
-        any(lock_lost(p, ds_base, us_base) for p in window if ok(p))
+    # Expected lock comes from the healthy polls bracketing *this* outage, not a
+    # global max, so a long-past higher-channel period can't force a false lock-loss.
+    before, after = healthy_neighbors(docsis_rows, event["start"], event["end"])
+    ds_base = max([chan_count(p, "ds_channels") for p in (before, after) if p], default=0)
+    us_base = max([chan_count(p, "us_channels") for p in (before, after) if p], default=0)
 
-    # "Core" = polls inside the actual outage (no margin); how many were unreachable?
+    # Hard RF evidence of a genuine local fault.
+    hard = rebooted(before, after) or any(lock_lost(p, ds_base, us_base) for p in window if ok(p))
+
+    # Unreachability is judged on the polls *inside* the outage; if the poll cadence
+    # left none there, fall back to the padded window so an all-unreachable window
+    # isn't mislabeled MODEM_HELD.
     core = [r for r in window if event["start"] <= parse_ts(r["timestamp"]) <= event["end"]]
-    core_unreach = sum(1 for r in core if not ok(r))
+    basis = core or window
+    unreach = sum(1 for r in basis if not ok(r))
 
     degraded = sum(1 for r in window if not ok(r) or lock_lost(r, ds_base, us_base))
 
     if hard:
         label = "MODEM_DROPPED"
-    elif core and core_unreach / len(core) >= UNREACH_FRACTION:
+    elif basis and unreach / len(basis) >= UNREACH_FRACTION:
         label = "MODEM_UNREACH"
     else:
         label = "MODEM_HELD"
-    return label, total, degraded
+    return label, len(window), degraded
 
 
 def main():
@@ -200,7 +220,7 @@ def main():
 
     conn_rows = read_csv(CONN_CSV)
     docsis_rows = read_csv(DOCSIS_CSV)
-    ds_base, us_base = docsis_baselines(docsis_rows)
+    ds_typ, us_typ = typical_lock(docsis_rows)
 
     # Default to when DOCSIS logging began: outages before that can't be attributed,
     # so there's no point recording hundreds of pre-poller NO_DOCSIS events.
@@ -217,7 +237,7 @@ def main():
     now = datetime.now()
     classified = []
     for e in events:
-        label, total, degraded = classify(e, docsis_rows, ds_base, us_base)
+        label, total, degraded = classify(e, docsis_rows)
         e.update(classification=label, polls=total, degraded=degraded,
                  final=(now - e["end"]).total_seconds() >= args.finalize_after)
         classified.append(e)
@@ -241,6 +261,7 @@ def main():
                 "docsis_degraded": e["degraded"],
                 "detail": f"{e['degraded']}/{e['polls']} polls degraded",
             })
+        DATA_DIR.mkdir(exist_ok=True)
         append_rows(EVENTS_CSV, EVENTS_HEADER, new_rows)
         if new_rows:
             print(f"Recorded {len(new_rows)} new outage event(s) to {EVENTS_CSV.name}")
@@ -252,7 +273,7 @@ def main():
     for e in classified:
         tally[e["classification"]] += 1
 
-    print(f"\nDOCSIS baseline lock: {ds_base} downstream / {us_base} upstream channels")
+    print(f"\nDOCSIS typical lock: {ds_typ} downstream / {us_typ} upstream channels")
     print(f"Outages found: {len(classified)}  "
           f"(held={tally['MODEM_HELD']}, dropped={tally['MODEM_DROPPED']}, "
           f"unreach={tally['MODEM_UNREACH']}, no-data={tally['NO_DOCSIS']})")

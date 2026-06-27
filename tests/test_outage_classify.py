@@ -11,8 +11,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import outage_classify as oc  # noqa: E402
 
-DS_BASE, US_BASE = 28, 3
-
 
 def poll(ts, ok=True, corr=94, ds=28, us=3, snr=38.6):
     """Build a docsis_status row as strings, matching a CSV read."""
@@ -38,7 +36,7 @@ def event(sh, sm, eh, em):
 
 
 def classify(ev, rows):
-    return oc.classify(ev, rows, DS_BASE, US_BASE)[0]
+    return oc.classify(ev, rows)[0]
 
 
 def test_modem_held_when_locked_through_outage():
@@ -73,6 +71,25 @@ def test_modem_dropped_on_visible_lock_loss():
 
 def test_no_docsis_when_window_empty():
     assert classify(event(5, 0, 5, 1), []) == "NO_DOCSIS"
+
+
+def test_modem_unreach_when_no_poll_inside_core():
+    # Short outage whose interval catches no DOCSIS poll, but the padded window is
+    # all-unreachable. Must not fall through to MODEM_HELD (empty-core regression).
+    rows = [poll(datetime(2026, 6, 26, 18, 57, 55).isoformat()),          # neighbor, outside window
+            poll(datetime(2026, 6, 26, 18, 59, 55).isoformat(), ok=False),
+            poll(datetime(2026, 6, 26, 19, 0, 55).isoformat(), ok=False),
+            poll(datetime(2026, 6, 26, 19, 3, 55).isoformat())]           # neighbor, outside window
+    ev = event(19, 0, 19, 0)   # single down cycle at 19:00:16, no poll inside [start, end]
+    assert classify(ev, rows) == "MODEM_UNREACH"
+
+
+def test_local_baseline_ignores_stale_high_channel_history():
+    # An old 32-channel era must not make today's normal 28-channel polls look like
+    # lock loss during a clean upstream outage (stale-baseline regression).
+    rows = [poll(t.isoformat(), ds=32, corr=10) for t in minutes(10, 0, 10, 4)]   # old era
+    rows += [poll(t.isoformat(), ds=28, corr=500) for t in minutes(14, 55, 15, 10)]
+    assert classify(event(15, 0, 15, 5), rows) == "MODEM_HELD"
 
 
 def conn(ts, ok):
