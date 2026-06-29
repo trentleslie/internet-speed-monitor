@@ -20,11 +20,15 @@ from pathlib import Path
 DATA_DIR = Path(__file__).parent / "data"
 
 
-def run_speedtest(interface: str | None = None) -> dict:
+def run_speedtest(interface: str | None = None, server_id: str | None = None) -> dict:
     """Run Ookla speedtest CLI and return parsed results.
 
     Args:
         interface: Network interface to bind to (e.g., 'eth0'). None for default.
+        server_id: Pin the test to a specific Ookla server id. None lets the CLI
+            auto-select, which can drift to a congested server and understate the
+            line (e.g. Astound's Seattle host caps far below the nearby Port Orchard
+            one). Pinning keeps throughput readings comparable over time.
 
     Returns:
         Parsed JSON result from speedtest CLI.
@@ -32,6 +36,8 @@ def run_speedtest(interface: str | None = None) -> dict:
     cmd = ["speedtest", "--format=json", "--accept-license"]
     if interface:
         cmd.extend(["--interface", interface])
+    if server_id:
+        cmd.append(f"--server-id={server_id}")
 
     result = subprocess.run(
         cmd,
@@ -55,6 +61,10 @@ def main():
         default="default",
         help="ISP identifier for CSV filename (e.g., astound, tmobile)"
     )
+    parser.add_argument(
+        "--server-id",
+        help="Pin to a specific Ookla server id (omit to auto-select)"
+    )
     args = parser.parse_args()
 
     DATA_DIR.mkdir(exist_ok=True)
@@ -63,7 +73,7 @@ def main():
     csv_file = DATA_DIR / f"speed_logs_{args.isp}.csv"
     write_header = not csv_file.exists()
 
-    data = run_speedtest(args.interface)
+    data = run_speedtest(args.interface, args.server_id)
 
     # Ookla CLI returns speeds in bytes/sec, convert to Mbps
     # Structure differs from speedtest-cli: download/upload are nested objects
