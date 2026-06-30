@@ -20,8 +20,15 @@ HERE = Path(__file__).resolve().parent
 DATA_DIR = HERE / "data"
 GATE_CSV = DATA_DIR / "speedtest_gate.csv"
 GATE_HEADER = ["timestamp", "action", "reason", "waited_s"]
+# Pin to the Port Orchard Astound server (69016). Auto-select drifts to Astound's
+# Seattle host (60635), which caps at ~75-370 Mbps while Port Orchard delivers the
+# full ~900 — same ping, idle LAN, clean DOCSIS, so the dips were a server artifact,
+# not the line. Pinning keeps the throughput series comparable. (See `speedtest
+# --servers` to refresh the id if Ookla retires it.)
+ASTOUND_SERVER_ID = "69016"
 SPEEDTEST_CMD = [sys.executable, str(HERE / "speedtest_monitor.py"),
-                 "--interface", "eth0", "--isp", "astound"]
+                 "--interface", "eth0", "--isp", "astound",
+                 "--server-id", ASTOUND_SERVER_ID]
 MAX_WAIT_S = 300
 RETRY_INTERVAL_S = 45
 
