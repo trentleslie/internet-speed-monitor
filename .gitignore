@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Collector data & generated plots — continuously regenerated on the lamppost Pi
+# (live CSVs) or reproducible from it. Kept on disk per the persist-results SOP,
+# but never version-controlled. The durable deliverables are the code + reports/.
+data/
