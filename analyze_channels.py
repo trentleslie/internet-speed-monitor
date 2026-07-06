@@ -92,8 +92,9 @@ def print_band_summary(df: pd.DataFrame):
         else:
             print("  Speed:      no speed test data")
 
-    # Band switching stats
-    switches = (df["band"] != df["band"].shift()).sum()
+    # Band switching stats. .shift() compares row 0 against NaN (always True), so
+    # drop it — otherwise a single-band dataset reports 1 phantom switch.
+    switches = (df["band"] != df["band"].shift()).iloc[1:].sum()
     days = max(duration.days, 1)
     print(f"\n{'─' * 40}")
     print(f"  Band Switching")
@@ -324,6 +325,7 @@ def plot_switching_pattern(df: pd.DataFrame):
     df_copy = df.copy()
     df_copy["date"] = df_copy["timestamp"].dt.date
     df_copy["switched"] = df_copy["band"] != df_copy["band"].shift()
+    df_copy.loc[df_copy.index[0], "switched"] = False  # row 0 vs NaN is a false positive
     daily_switches = df_copy.groupby("date")["switched"].sum()
 
     ax.bar(range(len(daily_switches)), daily_switches.values,
