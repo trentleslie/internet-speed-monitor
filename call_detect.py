@@ -19,7 +19,10 @@ WORK_HOSTS = {"MacBookPro", "pop-os"}   # Trent's real-meeting machines (confirm
 # A video call is BIDIRECTIONAL: you send your camera (up) AND receive others' video (down) at once.
 # Background sync goes up-only (MacBookPro idle: up bursts ~1Mbps, down <250kbps); streaming/downloads
 # go down-only. Requiring BOTH directions elevated separates a real call from either confounder.
-DOWN_THRESHOLD_KBPS = 700  # sustained download = receiving video (the reliable call tell)
+DOWN_THRESHOLD_KBPS = 250  # recalibrated 2026-06-26 vs a live MacBook Pro video call: an active call is
+                           # ~symmetric (both ~300-600 kbps); background sync is asymmetric (up~1Mbps, down<250),
+                           # so a 250 down-floor catches the call yet still rejects sync. (Camera-off/quiet
+                           # calls sit <250 both ways and remain undetectable by traffic alone.)
 UP_FLOOR_KBPS = 200        # plus non-trivial upload = interactive (your cam/mic), not passive streaming
 WINDOW_S = 150             # 2.5-min lookback
 MIN_HITS = 2               # require 2 qualifying polls -> sustained, not an isolated blip
