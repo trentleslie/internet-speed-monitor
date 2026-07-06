@@ -9,7 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
-# Collector data & generated plots — continuously regenerated on the lamppost Pi
-# (live CSVs) or reproducible from it. Kept on disk per the persist-results SOP,
-# but never version-controlled. The durable deliverables are the code + reports/.
-data/
+# Collector data — live CSVs the Pi rewrites every poll, plus reproducible
+# top-level plots. Kept on disk per the persist-results SOP, never committed.
+# Exception: data/plots/ holds the figures embedded in reports/*.md, so those
+# stay tracked as published deliverables.
+data/*
+!data/plots/
