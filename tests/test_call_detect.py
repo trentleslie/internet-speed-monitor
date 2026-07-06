@@ -26,6 +26,15 @@ def test_video_call_both_directions_is_call():
     assert "pop-os" in reason
 
 
+def test_symmetric_low_kbps_call_is_detected():
+    # ~400/400 kbps symmetric video call (camera on, both directions modest). Detected under the
+    # recalibrated 250 down-floor; MISSED under the old 700. Regression guard against silent revert.
+    rows = [row("pop-os", 400, 400, 10), row("pop-os", 420, 380, 40)]
+    active, reason = cd.is_call_active(rows, NOW)
+    assert active is True
+    assert "pop-os" in reason
+
+
 def test_background_sync_up_only_is_not_call():
     # MacBook Pro idle background: ~1Mbps up bursts, download stays low -> NOT a call
     rows = [row("MacBookPro", 1092, 107, 10), row("MacBookPro", 1045, 138, 40),
